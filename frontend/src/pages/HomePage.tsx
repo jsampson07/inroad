@@ -246,6 +246,14 @@ export function HomePage() {
     searchMutation.mutate(query)
   }
 
+  function openManualFallback() {
+    // Same destination frame as zero-candidates / Clearbit-failure auto-routes (§7).
+    setCandidates(null)
+    setShowManualFallback(true)
+    setManualName(companyQuery.trim())
+    setSearchError(null)
+  }
+
   function handleManualConfirm(event: FormEvent) {
     event.preventDefault()
     const name = manualName.trim()
@@ -382,6 +390,15 @@ export function HomePage() {
                   </li>
                 ))}
               </ul>
+              <p className="manual-escape">
+                <button
+                  type="button"
+                  className="text-link"
+                  onClick={openManualFallback}
+                >
+                  Can&apos;t find what you&apos;re looking for?
+                </button>
+              </p>
             </div>
           ) : null}
 

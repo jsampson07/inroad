@@ -163,6 +163,30 @@
   color: var(--text);
 }
 
+.manual-escape {
+  margin: 1rem 0 0;
+}
+
+.text-link {
+  margin: 0;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.95rem;
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+  cursor: pointer;
+}
+
+.text-link:hover,
+.text-link:focus-visible {
+  color: var(--text-h);
+  outline: none;
+}
+
 .manual-fallback {
   margin-top: 1.25rem;
   padding-top: 0.25rem;

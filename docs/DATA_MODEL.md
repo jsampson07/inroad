@@ -518,6 +518,6 @@ Autogenerate performs this topological sort automatically via foreign keys; it i
 
 **No change needed.** Toast confirmations and tab-specific fade-and-remove on `/history` are frontend presentation only — transient local leaving-set + CSS, plus invalidate-on-success already owned by the outcome mutations. No entity, column, enum, JSONB shape, endpoint, or migration changes.
 
-## /history outcome-stage badge + chronological timeline (2026-08-08)
+## Manual company-domain escape hatch on candidate list (2026-08-08)
 
-**No change needed.** Highest-tier row badge labels and the horizontal chronological outcome timeline are frontend presentation only over already-fetched non-voided `OUTCOMES` rows. No entity, column, enum, JSONB shape, endpoint, or migration changes. (Automatic No-Response supersession on later Reply/Interview remains deferred — see `OPEN_QUESTIONS.md`.)
+**No change needed.** Adding a user-triggered text link beneath non-empty Clearbit candidate results that opens the existing FRAME 1 manual name+domain fallback is frontend presentation only — same destination frame already reached by zero-candidates and Clearbit-failure auto-routes. No entity, column, enum, JSONB shape, endpoint, or migration changes.

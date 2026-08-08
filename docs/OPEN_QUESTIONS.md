@@ -194,3 +194,9 @@ Slice 1's FRAME 6 Mark as Sent remains as a separate current-email-only convenie
 
 ### OUTCOMES SENT uniqueness + create-time gate + retract cascade
 **Resolved (2026-08-07):** At most one non-voided `SENT` per `generated_email_id`, DB-enforced by partial unique index `uq_outcomes_generated_email_id_nonvoided_sent` (`WHERE voided = false AND event_type = 'sent'`; migration `e8a3c71f2049`). Non-SENT event types (`NO_RESPONSE`, `REPLIED`, `INTERVIEW`) require an existing non-voided SENT first — app-level gate in `create_outcome` via `list_outcomes`; duplicate SENT also gated there, with the unique index as a concurrent-insert backstop (`IntegrityError` → same `ValidationError`). Retracting a non-voided SENT cascades: voids every other non-voided outcome for that email in the same transaction; retracting a non-SENT row does not cascade. Re-marking Sent after retract is a fresh row (voided SENT does not block the partial index). Frontend `/history` mirrors the gate from in-memory grouped outcomes and shows inline cascade confirm copy when retracting Sent with dependents. Resolves the soft-delete entry's anticipated "uniqueness on SENT" note. See `DATA_MODEL.md` §2.8 / §3.1 and `ARCHITECTURE.md` §9 / §10.3.
+
+---
+
+## Manual company-domain escape hatch on candidate list (2026-08-08)
+
+**No change needed.** User-triggered entry into the existing FRAME 1 manual name+domain fallback from a non-empty Clearbit candidate list does not open a new question, deferral, or design fork — it reuses the fallback already documented in `ARCHITECTURE.md` §7. No schema, provider, or auth open items.

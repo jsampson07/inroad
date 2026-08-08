@@ -157,3 +157,7 @@ Apollo and Anymail Finder integrations (see Deferred Features table), then revis
 ## /history outcome-stage badge + chronological timeline (2026-08-08)
 
 **No change needed.** Replacing the binary logged badge with highest-tier stage labels and rendering outcomes as a chronological connected timeline are presentation choices on the existing outcome-history MVP surface. No change to product scope, funnel semantics, value proposition, eval rubric, or tech-stack choices. (Automatic No-Response supersession when a later Reply/Interview is logged remains an explicitly deferred implementation item — see `OPEN_QUESTIONS.md`.)
+
+## Manual company-domain escape hatch on candidate list (2026-08-08)
+
+**No change needed.** A user-triggered link from non-empty company-search results into the existing manual name+domain fallback is frontend UX on an already-scoped company-lock-in path (Clearbit suggest + manual domain). No change to product scope, value proposition, eval rubric, or tech-stack choices.

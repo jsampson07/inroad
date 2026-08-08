@@ -107,6 +107,16 @@ describe('HomePage discovery flow', () => {
       await screen.findByRole('button', { name: /acme inc/i }),
     ).toBeInTheDocument()
     expect(screen.getByText('acme.com')).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', {
+        name: /can't find what you're looking for/i,
+      }),
+    ).toBeInTheDocument()
+    // Manual-entry frame itself is not auto-shown when candidates exist.
+    expect(
+      screen.queryByText(/haven't found what you're looking for/i),
+    ).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/company domain/i)).not.toBeInTheDocument()
     // Still FRAME 1 — role title / confirmation must not appear yet.
     expect(
       screen.queryByText(/searching contacts at/i),
@@ -115,6 +125,59 @@ describe('HomePage discovery flow', () => {
       'http://localhost:8000/companies/search',
       expect.objectContaining({ method: 'POST' }),
     )
+  })
+
+  it('manual escape link opens the same manual domain fallback and locks company', async () => {
+    const user = userEvent.setup()
+    vi.mocked(fetch).mockResolvedValue(
+      jsonResponse({
+        candidates: [
+          { name: 'Acme Inc', domain: 'acme.com' },
+          { name: 'Acme Labs', domain: 'acmelabs.io' },
+        ],
+      }),
+    )
+
+    renderHome()
+
+    await user.type(screen.getByLabelText(/company name/i), 'Acme')
+    await user.click(screen.getByRole('button', { name: /^search$/i }))
+    await screen.findByRole('button', { name: /acme labs/i })
+
+    await user.click(
+      screen.getByRole('button', {
+        name: /can't find what you're looking for/i,
+      }),
+    )
+
+    expect(
+      screen.getByText(/haven't found what you're looking for/i),
+    ).toBeInTheDocument()
+    expect(screen.getByLabelText(/company domain/i)).toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', { name: /acme labs/i }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('button', {
+        name: /can't find what you're looking for/i,
+      }),
+    ).not.toBeInTheDocument()
+
+    // Prefill mirrors auto-routed fallback (search query → manual name).
+    const nameInputs = screen.getAllByLabelText(/^company name$/i)
+    expect(nameInputs[nameInputs.length - 1]).toHaveValue('Acme')
+
+    await user.type(screen.getByLabelText(/company domain/i), 'acme-custom.io')
+    await user.click(
+      screen.getByRole('button', { name: /use this company/i }),
+    )
+
+    expect(
+      screen.getByText(/searching contacts at acme \(acme-custom\.io\)/i),
+    ).toBeInTheDocument()
+    expect(
+      JSON.parse(sessionStorage.getItem(DISCOVERY_FLOW_KEY)!).company,
+    ).toEqual({ name: 'Acme', domain: 'acme-custom.io' })
   })
 
   it('selecting a candidate locks the company and advances to FRAME 2', async () => {
