@@ -2,7 +2,7 @@
 
 > For external readers: this is a living, session-overwritten implementation snapshot from active development — verified against the codebase each session, not a polished changelog or finished status report.
 
-*Overwritten each session, not appended to. Reflects verified state as of the session ending 2026-08-07 — OUTCOMES SENT gate + retract cascade.*
+*Overwritten each session, not appended to. Reflects verified state as of the session ending 2026-08-08 — /history toast + fade-and-remove.*
 
 ---
 
@@ -10,33 +10,25 @@
 
 ### Verified working (functionally exercised, not just present)
 
-- **OUTCOMES SENT uniqueness + create-time gate + retract cascade (this session):**
-  - Additive migration `e8a3c71f2049`: partial unique index `uq_outcomes_generated_email_id_nonvoided_sent` on `outcomes (generated_email_id) WHERE voided = false AND event_type = 'sent'`. Declared on the ORM via `__table_args__`. Applied locally via `alembic upgrade head`.
-  - `create_outcome`: app-level gate via `list_outcomes` — reject second non-voided SENT; reject non-SENT without a prior non-voided SENT. `IntegrityError` on the unique index translated to the same already-sent `ValidationError` (race backstop).
-  - `retract_outcome`: voiding a non-voided SENT also voids every other non-voided outcome for that `generated_email_id` in the same transaction (siblings via `list_outcomes`). Non-SENT retract unchanged (no cascade). Fresh SENT after retract succeeds.
-  - `/history` log form: disable Sent when a non-voided Sent exists; disable other event types until Sent exists (in-memory group only — no new fetch).
-  - `/history` retract: inline cascade confirm copy when retracting Sent with other non-voided outcomes; existing `OUTCOMES_QUERY_KEY` invalidation refetches all newly voided rows.
-  - FRAME 6 Mark as Sent: left `sentOutcomeLogged` sessionStorage guard in place; backend rejection already surfaces `ApiError.user_message` (confirmed — no code change required).
-- **Backend tests run this session:**
-  ```
-  pytest tests/services/test_outcomes.py
-  → 11 passed
-  ```
+- **/history toast + tab-specific fade-and-remove (this session, frontend-only):**
+  - Single page-level toast on `HistoryPage` (one at a time; new success replaces; ~3s auto-dismiss). Event-type-specific copy for log (`Marked as …`) and retract (`Retracted: …`).
+  - Fade-and-remove only when filter membership changes: first log on **Not yet logged**; last-outcome retract (incl. SENT cascade) on **Logged**. **All** never fades — badge/timeline update in place. Toast still fires on every tab.
+  - Mechanism: mutation `onSuccess` uses in-memory outcome counts (pre-invalidate) to decide membership change → transient `leaving` set + CSS opacity fade (~280ms) → existing `OUTCOMES_QUERY_KEY` invalidation still drives real data removal; leaving id cleared after the transition. No toast/animation library.
+  - Wiring: `HistoryListFeedbackContext` from `HistoryPage` into `LogOutcomeForm` / `RetractOutcomeButton`; helpers in `lib/historyFeedback.ts`.
 - **Frontend tests run this session:**
   ```
   npm run test:run
   → Test Files  10 passed (10)
-  → Tests  60 passed (60)
+  → Tests  65 passed (65)
   ```
-  New coverage: log-form option enablement; Sent retract cascade confirm copy. Existing log test updated to log Sent first (only enabled option when unlogged).
-  `tsc -b` clean.
-- **Prior slices unchanged:** history expand accordion, `/analytics`, Slice 2a/2b otherwise, FRAME 6 Mark as Sent UX.
+  New coverage: event-type toast text (all `OutcomeEventType` × log/retract); toast replace-not-stack; fade+remove on Not yet logged first log; fade+remove on Logged last retract; no fade on All for log/retract. Existing accordion / filter-reset / expand-fetch / SENT-gate / cascade-confirm tests still pass (retract empty-state waits account for fade duration).
+  `npx tsc -b` clean.
+- **Prior slices unchanged:** SENT gate + retract cascade (backend + form enablement), history expand accordion, `/analytics`, FRAME 6 Mark as Sent UX. No backend/schema/API changes this session.
 
 ### Present, but not yet exercised by anything
 
-- **Manual browser dogfood** of SENT gate / cascade confirm on `/history`, and of Mark as Sent after the backend constraint.
-- **Manual browser dogfood of `/history` expand animation** — still pending from prior session.
-- **Manual browser dogfood of `/analytics`** — still pending from prior session.
+- **Manual browser dogfood** of toast timing/placement and fade timing on `/history` (Vitest covers class + removal; visual polish not checked against a running app).
+- **Manual browser dogfood** of SENT gate / cascade confirm, expand animation, `/analytics` — still pending from prior sessions.
 - **Router-level HTTP TestClient suites** for analytics / Slice 2a list/retract — still service-level / pure-function only.
 
 ### Not started
@@ -61,13 +53,13 @@
 10. **`ResumeExtraction` revision:** `candidate_name` + `projects`/`ProjectEntry`. Deterministic post-eval signature append + `_strip_trailing_closing`.
 11. **`OUTCOMES.user_id` denormalized** (migration `75ea1b948b2a`); **`voided`** added (migration `c4f8e2a91b07`); **one non-voided SENT** partial unique index (migration `e8a3c71f2049`) + create-time gate + SENT retract cascade — see `DATA_MODEL.md` §2.8 / `OPEN_QUESTIONS.md`.
 
-**Doc/code check this session:** Docs updated to match the new gate/cascade. Prior §8.2.4 / §10.3 wording that allowed multiple SENT or left replies non-voided after SENT retract was rewritten. `product_discovery_summary.md` deliberately left as-is (implementation-level integrity decision; no MVP-scope change).
+**Doc/code check this session:** `ARCHITECTURE.md` §8.6 extended with toast + fade-and-remove (extends, does not replace, the existing filter-interaction note). `DATA_MODEL.md` / `product_discovery_summary.md` explicitly marked no-change. `OPEN_QUESTIONS.md` unchanged — no new unresolved edge case surfaced (in-flight toast replaces; re-marking leaving resets the fade timer).
 
 ---
 
 ## What's next
 
-1. **Manual browser dogfood** of SENT gate / cascade confirm on `/history`, Mark as Sent, expand animation, `/analytics`.
+1. **Manual browser dogfood** of `/history` toast + fade timing, SENT gate / cascade, expand animation, `/analytics`.
 2. **Stretch — rate-limiting** before any public deploy.
 
 ---
@@ -75,28 +67,22 @@
 ## Test results (this session — actual suite output)
 
 ```
-backend: pytest tests/services/test_outcomes.py
-→ 11 passed
-
 frontend: npm run test:run
 → Test Files  10 passed (10)
-→ Tests  60 passed (60)
+→ Tests  65 passed (65)
 
 frontend: npx tsc -b
 → exit 0 (clean)
-
-alembic upgrade head
-→ Running upgrade c4f8e2a91b07 -> e8a3c71f2049
 ```
 
-**Not run this session:** full backend suite beyond outcomes, live LLM/provider calls, manual browser walkthrough.
+**Not run this session:** backend pytest, live LLM/provider calls, manual browser walkthrough.
 
 ---
 
 ## Doc notes from this session
 
-- **`PROGRESS.md`:** overwritten for SENT gate + retract cascade.
-- **`DATA_MODEL.md`:** §2.8 decision note + §3.1 additive migration `e8a3c71f2049`.
-- **`ARCHITECTURE.md`:** §8.2.4 Mark as Sent wording; §8.6 log-form gate + cascade confirm; §9 create gate + cascade; §10.3 retract interaction rewritten for cascade.
-- **`OPEN_QUESTIONS.md`:** new Resolved entry; soft-delete "Future interaction — uniqueness on SENT" marked resolved with cross-ref.
-- **`product_discovery_summary.md`:** left as-is — no MVP scope / value-proposition change.
+- **`PROGRESS.md`:** overwritten for /history toast + fade-and-remove.
+- **`ARCHITECTURE.md`:** §8.6 toast/snackbar + fade-and-remove subsection; clarifies underlying data/filter membership unchanged.
+- **`DATA_MODEL.md`:** explicit no-change note (frontend UX only).
+- **`product_discovery_summary.md`:** explicit no-change note (no MVP scope change).
+- **`OPEN_QUESTIONS.md`:** left as-is — no genuine new open question.

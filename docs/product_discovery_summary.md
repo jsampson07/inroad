@@ -147,3 +147,9 @@ Outcome logging ships as soon as generation works, so real data starts accumulat
 Apollo and Anymail Finder integrations (see Deferred Features table), then revisit the rest of the deferred list if time allows: iterative refinement, additional data sources, multi-user growth features, and only reconsider Gmail OAuth integration if the trust-model concern is resolved to your satisfaction.
 
 **Working habit throughout:** after AI helps you implement any piece, explain out loud why it works and what the alternatives were before moving on. If you can't, that's the piece to slow down on.
+
+---
+
+## /history toast + fade-and-remove (2026-08-08)
+
+**No change needed.** Confirmation toast and tab-specific fade-and-remove on the outcome history view are frontend UX polish on an already-scoped MVP surface (past emails + outcome logging/retract). No change to product scope, value proposition, eval rubric, or tech-stack choices.

@@ -562,6 +562,33 @@
   border: 1px solid var(--border);
   border-radius: 6px;
   background: rgba(255, 255, 255, 0.45);
+  opacity: 1;
+  /* Same plain-CSS approach as accordion expand — no animation library. */
+  transition: opacity 0.28s ease;
+}
+
+.history-email-row.is-leaving {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.history-toast {
+  position: fixed;
+  bottom: 1.5rem;
+  left: 50%;
+  z-index: 40;
+  max-width: min(22rem, calc(100vw - 2rem));
+  margin: 0;
+  padding: 0.75rem 1.1rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--text-h);
+  color: #f7f6f4;
+  font-size: 0.95rem;
+  line-height: 1.35;
+  text-align: center;
+  transform: translateX(-50%);
+  box-shadow: 0 0.35rem 1rem rgba(20, 18, 24, 0.18);
 }
 
 .history-email-summary {

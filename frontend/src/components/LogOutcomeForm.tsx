@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 
+import { useHistoryListFeedback } from '../context/HistoryListFeedbackContext'
 import { ApiError } from '../lib/apiClient'
 import { createOutcome } from '../lib/outcomeApi'
 import type { OutcomeEventType, OutcomeOut } from '../lib/outcomeTypes'
@@ -38,9 +39,13 @@ function isOptionDisabled(
  * Options respect the SENT gate from already-fetched outcomes: Sent is
  * disabled once a non-voided Sent exists; other types stay disabled until
  * Sent exists. No extra fetch.
+ *
+ * On success: notify HistoryPage (toast + optional fade) using in-memory
+ * counts *before* invalidating OUTCOMES_QUERY_KEY.
  */
 export function LogOutcomeForm({ generatedEmailId, outcomes }: Props) {
   const queryClient = useQueryClient()
+  const { onLogSuccess } = useHistoryListFeedback()
   const sentExists = hasNonVoidedSent(outcomes)
   const [eventType, setEventType] = useState<OutcomeEventType>(
     sentExists ? 'replied' : 'sent',
@@ -61,8 +66,14 @@ export function LogOutcomeForm({ generatedEmailId, outcomes }: Props) {
         generated_email_id: generatedEmailId,
         event_type: eventType,
       }),
-    onSuccess: () => {
+    onSuccess: (created) => {
       setError(null)
+      // Membership check uses pre-invalidate counts held in local memory.
+      onLogSuccess({
+        generatedEmailId,
+        eventType: created.event_type,
+        activeCountBefore: outcomes.length,
+      })
       void queryClient.invalidateQueries({ queryKey: OUTCOMES_QUERY_KEY })
     },
     onError: (err) => {

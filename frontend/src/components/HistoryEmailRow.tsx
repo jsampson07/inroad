@@ -9,6 +9,11 @@ type Props = {
   outcomes: OutcomeOut[]
   /** Controlled by HistoryPage — only one row expanded at a time. */
   expanded: boolean
+  /**
+   * True while the row is fading out of the active filter after a
+   * membership-changing log/retract (transient leaving-set).
+   */
+  leaving: boolean
   onToggle: () => void
 }
 
@@ -37,6 +42,7 @@ export function HistoryEmailRow({
   email,
   outcomes,
   expanded,
+  leaving,
   onToggle,
 }: Props) {
   const isLogged = outcomes.length > 0
@@ -60,14 +66,16 @@ export function HistoryEmailRow({
     return () => window.clearTimeout(timeoutId)
   }, [expanded])
 
+  const rowClassName = [
+    'history-email-row',
+    expanded ? 'history-email-row-expanded' : null,
+    leaving ? 'is-leaving' : null,
+  ]
+    .filter(Boolean)
+    .join(' ')
+
   return (
-    <div
-      className={
-        expanded
-          ? 'history-email-row history-email-row-expanded'
-          : 'history-email-row'
-      }
-    >
+    <div className={rowClassName}>
       <button
         type="button"
         className="history-email-summary"
