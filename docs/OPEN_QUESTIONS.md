@@ -69,6 +69,9 @@ v1 ships two **separate** breakdown lists on `AnalyticsSummary` — by confidenc
 ### Analytics date-range filtering
 `GET /analytics/summary` aggregates over the caller's full outcome history with no `from`/`to` query params. Fine for early personal use where the whole log is the relevant window. Stated trigger to revisit: once enough outreach has accumulated that "all time" mixes meaningfully different job-search phases (e.g. last month vs. three months ago), or a concrete need to compare periods appears during dogfooding. Implementation would be additive query params filtering on `OUTCOMES.occurred_at` (server-stamped log time — see Resolved `occurred_at` note) before the pure `_compute_summary` step; no schema change required.
 
+### Automatic No-Response supersession when a later Reply/Interview is logged
+**Direction chosen, deliberately not built yet:** When a user logs `replied` or `interview` for an email that already has a non-voided `no_response`, the backend should automatically void that `no_response` in the same create transaction (same soft-delete / `voided` path as retract), and the `/history` UI should make that supersession visible (timeline node disappears; badge precedence recomputes without "No response" still counting). This keeps the funnel coherent — "no response" and "replied" as simultaneous active facts is contradictory — without forcing a manual retract-first dance. **Not implemented on this branch:** the outcome-stage badge + chronological timeline ship first, with No Response as an ordinary chronological node and no special auto-void. Stated trigger to revisit: next `/history` outcome-UX pass after the stage badge and timeline have been dogfooded, or immediately if real use shows users routinely logging Replied/Interview while a stale No Response remains active and confuses the badge / analytics denominators.
+
 ---
 
 ## Not yet discussed (on the list, conversation hasn't reached them)
