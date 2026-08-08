@@ -2,6 +2,10 @@ import { useQuery } from '@tanstack/react-query'
 
 import { ApiError } from '../lib/apiClient'
 import { getGeneratedEmailById } from '../lib/generatedEmailApi'
+import {
+  OUTCOME_STAGE_LABELS,
+  sortOutcomesChronologically,
+} from '../lib/outcomeStage'
 import { generatedEmailDetailQueryKey } from '../lib/queryKeys'
 import type { OutcomeOut } from '../lib/outcomeTypes'
 import { LogOutcomeForm } from './LogOutcomeForm'
@@ -15,13 +19,6 @@ type Props = {
   enabled: boolean
 }
 
-const EVENT_LABELS: Record<OutcomeOut['event_type'], string> = {
-  sent: 'Sent',
-  no_response: 'No response',
-  replied: 'Replied',
-  interview: 'Interview',
-}
-
 function formatOccurredAt(iso: string): string {
   const date = new Date(iso)
   if (Number.isNaN(date.getTime())) return iso
@@ -30,7 +27,9 @@ function formatOccurredAt(iso: string): string {
 
 /**
  * Expanded row content: full subject/body (fetched once on expand, cached by
- * TanStack Query) + outcome timeline from already-loaded outcomes (no refetch).
+ * TanStack Query) + chronological outcome timeline from already-loaded
+ * outcomes (no refetch). Timeline is a horizontal connected flow; each node
+ * keeps its own retract control.
  */
 export function HistoryEmailDetail({ emailId, outcomes, enabled }: Props) {
   const detailQuery = useQuery({
@@ -38,6 +37,8 @@ export function HistoryEmailDetail({ emailId, outcomes, enabled }: Props) {
     queryFn: () => getGeneratedEmailById(emailId),
     enabled,
   })
+
+  const chronological = sortOutcomesChronologically(outcomes)
 
   return (
     <div className="history-email-detail">
@@ -64,27 +65,35 @@ export function HistoryEmailDetail({ emailId, outcomes, enabled }: Props) {
 
       <div className="history-outcome-timeline">
         <h3 className="discovery-subhead">Outcome timeline</h3>
-        {outcomes.length === 0 ? (
+        {chronological.length === 0 ? (
           <p className="discovery-muted">No outcomes logged yet.</p>
         ) : (
-          <ul className="history-outcome-list">
-            {outcomes.map((outcome) => (
-              <li key={outcome.id} className="history-outcome-item">
-                <span className="history-outcome-event">
-                  {EVENT_LABELS[outcome.event_type]}
-                </span>
-                <span className="history-outcome-when">
-                  {formatOccurredAt(outcome.occurred_at)}
-                </span>
-                <RetractOutcomeButton
-                  outcomeId={outcome.id}
-                  generatedEmailId={emailId}
-                  eventType={outcome.event_type}
-                  hasOtherNonVoidedOutcomes={outcomes.length > 1}
-                />
+          <ol className="history-outcome-flow">
+            {chronological.map((outcome, index) => (
+              <li key={outcome.id} className="history-outcome-step">
+                <div className="history-outcome-step-rail" aria-hidden="true">
+                  <span className="history-outcome-dot" />
+                  {index < chronological.length - 1 ? (
+                    <span className="history-outcome-connector" />
+                  ) : null}
+                </div>
+                <div className="history-outcome-step-body">
+                  <span className="history-outcome-event">
+                    {OUTCOME_STAGE_LABELS[outcome.event_type]}
+                  </span>
+                  <span className="history-outcome-when">
+                    {formatOccurredAt(outcome.occurred_at)}
+                  </span>
+                  <RetractOutcomeButton
+                    outcomeId={outcome.id}
+                    generatedEmailId={emailId}
+                    eventType={outcome.event_type}
+                    hasOtherNonVoidedOutcomes={chronological.length > 1}
+                  />
+                </div>
               </li>
             ))}
-          </ul>
+          </ol>
         )}
       </div>
 

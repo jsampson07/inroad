@@ -517,3 +517,7 @@ Autogenerate performs this topological sort automatically via foreign keys; it i
 ## /history toast + fade-and-remove (2026-08-08)
 
 **No change needed.** Toast confirmations and tab-specific fade-and-remove on `/history` are frontend presentation only — transient local leaving-set + CSS, plus invalidate-on-success already owned by the outcome mutations. No entity, column, enum, JSONB shape, endpoint, or migration changes.
+
+## /history outcome-stage badge + chronological timeline (2026-08-08)
+
+**No change needed.** Highest-tier row badge labels and the horizontal chronological outcome timeline are frontend presentation only over already-fetched non-voided `OUTCOMES` rows. No entity, column, enum, JSONB shape, endpoint, or migration changes. (Automatic No-Response supersession on later Reply/Interview remains deferred — see `OPEN_QUESTIONS.md`.)

@@ -153,3 +153,7 @@ Apollo and Anymail Finder integrations (see Deferred Features table), then revis
 ## /history toast + fade-and-remove (2026-08-08)
 
 **No change needed.** Confirmation toast and tab-specific fade-and-remove on the outcome history view are frontend UX polish on an already-scoped MVP surface (past emails + outcome logging/retract). No change to product scope, value proposition, eval rubric, or tech-stack choices.
+
+## /history outcome-stage badge + chronological timeline (2026-08-08)
+
+**No change needed.** Replacing the binary logged badge with highest-tier stage labels and rendering outcomes as a chronological connected timeline are presentation choices on the existing outcome-history MVP surface. No change to product scope, funnel semantics, value proposition, eval rubric, or tech-stack choices. (Automatic No-Response supersession when a later Reply/Interview is logged remains an explicitly deferred implementation item — see `OPEN_QUESTIONS.md`.)

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 
 import type { GeneratedEmailListOut } from '../lib/generatedEmailTypes'
+import { outcomeStageBadgeLabel } from '../lib/outcomeStage'
 import type { OutcomeOut } from '../lib/outcomeTypes'
 import { HistoryEmailDetail } from './HistoryEmailDetail'
 
@@ -45,7 +46,8 @@ export function HistoryEmailRow({
   leaving,
   onToggle,
 }: Props) {
-  const isLogged = outcomes.length > 0
+  const badgeLabel = outcomeStageBadgeLabel(outcomes)
+  const isLogged = badgeLabel !== 'Not logged'
   /** Content stays mounted during the collapse CSS transition, then unmounts. */
   const [detailMounted, setDetailMounted] = useState(expanded)
   /** Visual open state lags one frame on expand so grid-template-rows can animate. */
@@ -106,7 +108,7 @@ export function HistoryEmailRow({
                 : 'history-logged-badge history-logged-no'
             }
           >
-            {isLogged ? 'Logged' : 'Not logged'}
+            {badgeLabel}
           </span>
         </span>
       </button>

@@ -304,7 +304,11 @@ describe('HistoryPage', () => {
         within(timeline as HTMLElement).getByText('Sent'),
       ).toBeInTheDocument()
     })
-    expect(within(row as HTMLElement).getByText('Logged')).toBeInTheDocument()
+    expect(
+      within(row as HTMLElement).getByText('Sent', {
+        selector: '.history-logged-badge',
+      }),
+    ).toBeInTheDocument()
     // All tab: in-place update only — no fade/remove.
     expect(row).not.toHaveClass('is-leaving')
 
@@ -1004,7 +1008,9 @@ describe('HistoryPage', () => {
 
     await waitFor(() => {
       expect(toastEl()?.textContent).toBe('Marked as Sent')
-      expect(within(row()).getByText('Logged')).toBeInTheDocument()
+      expect(
+        within(row()).getByText('Sent', { selector: '.history-logged-badge' }),
+      ).toBeInTheDocument()
     })
     expect(row()).not.toHaveClass('is-leaving')
     expect(
@@ -1026,5 +1032,214 @@ describe('HistoryPage', () => {
         selector: '.history-email-subject',
       }),
     ).toBeInTheDocument()
+  })
+
+  it('shows highest-tier badge labels for single- and multi-outcome rows', async () => {
+    const user = userEvent.setup()
+    const sentOnly: GeneratedEmailListOut = {
+      ...loggedEmail,
+      id: 301,
+      subject: 'Sent only subject',
+    }
+    const noResponseEmail: GeneratedEmailListOut = {
+      ...loggedEmail,
+      id: 302,
+      subject: 'No response subject',
+    }
+    const repliedEmail: GeneratedEmailListOut = {
+      ...loggedEmail,
+      id: 303,
+      subject: 'Replied subject',
+    }
+    const interviewEmail: GeneratedEmailListOut = {
+      ...loggedEmail,
+      id: 304,
+      subject: 'Interview subject',
+    }
+    mockInitialLists(
+      [
+        sentOnly,
+        noResponseEmail,
+        repliedEmail,
+        interviewEmail,
+        unloggedEmail,
+      ],
+      [
+        {
+          id: 601,
+          generated_email_id: 301,
+          event_type: 'sent',
+          occurred_at: '2026-08-01T12:00:00Z',
+          voided: false,
+        },
+        {
+          id: 602,
+          generated_email_id: 302,
+          event_type: 'sent',
+          occurred_at: '2026-08-01T12:00:00Z',
+          voided: false,
+        },
+        {
+          id: 603,
+          generated_email_id: 302,
+          event_type: 'no_response',
+          occurred_at: '2026-08-05T12:00:00Z',
+          voided: false,
+        },
+        {
+          id: 604,
+          generated_email_id: 303,
+          event_type: 'sent',
+          occurred_at: '2026-08-01T12:00:00Z',
+          voided: false,
+        },
+        {
+          id: 605,
+          generated_email_id: 303,
+          event_type: 'no_response',
+          occurred_at: '2026-08-04T12:00:00Z',
+          voided: false,
+        },
+        {
+          id: 606,
+          generated_email_id: 303,
+          event_type: 'replied',
+          occurred_at: '2026-08-06T12:00:00Z',
+          voided: false,
+        },
+        {
+          id: 607,
+          generated_email_id: 304,
+          event_type: 'sent',
+          occurred_at: '2026-08-01T12:00:00Z',
+          voided: false,
+        },
+        {
+          id: 608,
+          generated_email_id: 304,
+          event_type: 'replied',
+          occurred_at: '2026-08-02T12:00:00Z',
+          voided: false,
+        },
+        {
+          id: 609,
+          generated_email_id: 304,
+          event_type: 'interview',
+          occurred_at: '2026-08-03T12:00:00Z',
+          voided: false,
+        },
+      ],
+    )
+    renderHistory()
+
+    const badgeText = async (subject: string) => {
+      const subjectEl = await screen.findByText(subject, {
+        selector: '.history-email-subject',
+      })
+      const rowEl = subjectEl.closest('.history-email-row') as HTMLElement
+      return within(rowEl).getByText((_, el) =>
+        Boolean(el?.classList.contains('history-logged-badge')),
+      ).textContent
+    }
+
+    expect(await badgeText('Sent only subject')).toBe('Sent')
+    expect(await badgeText('No response subject')).toBe('No response')
+    expect(await badgeText('Replied subject')).toBe('Replied')
+    expect(await badgeText('Interview subject')).toBe('Interview')
+
+    await user.click(screen.getByRole('radio', { name: 'All' }))
+    const unloggedRow = (
+      await screen.findByText('Quick note about the TA role', {
+        selector: '.history-email-subject',
+      })
+    ).closest('.history-email-row') as HTMLElement
+    expect(within(unloggedRow).getByText('Not logged')).toBeInTheDocument()
+  })
+
+  it('renders timeline nodes chronologically and retract updates badge precedence', async () => {
+    const user = userEvent.setup()
+    const interviewOutcome: OutcomeOut = {
+      id: 703,
+      generated_email_id: 101,
+      event_type: 'interview',
+      occurred_at: '2026-08-03T15:00:00Z',
+      voided: false,
+    }
+    const repliedOutcome: OutcomeOut = {
+      id: 702,
+      generated_email_id: 101,
+      event_type: 'replied',
+      occurred_at: '2026-08-02T14:00:00Z',
+      voided: false,
+    }
+    let outcomes: OutcomeOut[] = [
+      interviewOutcome,
+      sentOutcome,
+      repliedOutcome,
+    ]
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const method = init?.method ?? 'GET'
+
+      if (url.endsWith('/generated-emails') && method === 'GET') {
+        return jsonResponse([loggedEmail])
+      }
+      if (url.endsWith('/outcomes') && method === 'GET') {
+        return jsonResponse(outcomes)
+      }
+      if (url.endsWith('/generated-emails/101') && method === 'GET') {
+        return jsonResponse(fullLoggedEmail)
+      }
+      if (url.endsWith('/outcomes/703/retract') && method === 'POST') {
+        outcomes = outcomes.filter((o) => o.id !== 703)
+        return jsonResponse({ ...interviewOutcome, voided: true })
+      }
+      return jsonResponse({ user_message: 'Unexpected', error_code: 'Test' }, 500)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    renderHistory()
+
+    const row = (
+      await screen.findByText('Interest in Backend Role', {
+        selector: '.history-email-subject',
+      })
+    ).closest('.history-email-row') as HTMLElement
+    expect(
+      within(row).getByText('Interview', { selector: '.history-logged-badge' }),
+    ).toBeInTheDocument()
+
+    await user.click(within(row).getByText('Interest in Backend Role'))
+    await screen.findByText(/I am interested in the backend role/)
+
+    const flow = document.querySelector(
+      '.history-outcome-flow',
+    ) as HTMLOListElement
+    expect(flow).not.toBeNull()
+    const steps = within(flow).getAllByRole('listitem')
+    expect(steps).toHaveLength(3)
+    expect(within(steps[0]).getByText('Sent')).toBeInTheDocument()
+    expect(within(steps[1]).getByText('Replied')).toBeInTheDocument()
+    expect(within(steps[2]).getByText('Interview')).toBeInTheDocument()
+
+    await user.click(
+      within(steps[2]).getByRole('button', { name: 'Retract' }),
+    )
+    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+
+    await waitFor(() => {
+      expect(
+        within(row).getByText('Replied', { selector: '.history-logged-badge' }),
+      ).toBeInTheDocument()
+    })
+    await waitFor(() => {
+      const updatedFlow = document.querySelector(
+        '.history-outcome-flow',
+      ) as HTMLOListElement
+      expect(within(updatedFlow).getAllByRole('listitem')).toHaveLength(2)
+      expect(
+        within(updatedFlow).queryByText('Interview'),
+      ).not.toBeInTheDocument()
+    })
+    expect(row).not.toHaveClass('is-leaving')
   })
 })
