@@ -1,6 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 
+import { useHistoryListFeedback } from '../context/HistoryListFeedbackContext'
 import { ApiError } from '../lib/apiClient'
 import { retractOutcome } from '../lib/outcomeApi'
 import type { OutcomeEventType } from '../lib/outcomeTypes'
@@ -8,6 +9,7 @@ import { OUTCOMES_QUERY_KEY } from '../lib/queryKeys'
 
 type Props = {
   outcomeId: number
+  generatedEmailId: number
   eventType: OutcomeEventType
   /**
    * True when this email has other non-voided outcomes besides this row
@@ -22,13 +24,18 @@ type Props = {
  *
  * Retracting a Sent row that has dependent outcomes shows cascade copy
  * before Confirm — backend voids those siblings in the same transaction.
+ *
+ * On success: notify HistoryPage (toast + optional fade) using in-memory
+ * counts *before* invalidating OUTCOMES_QUERY_KEY.
  */
 export function RetractOutcomeButton({
   outcomeId,
+  generatedEmailId,
   eventType,
   hasOtherNonVoidedOutcomes,
 }: Props) {
   const queryClient = useQueryClient()
+  const { onRetractSuccess } = useHistoryListFeedback()
   const [confirming, setConfirming] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -37,6 +44,14 @@ export function RetractOutcomeButton({
     onSuccess: () => {
       setError(null)
       setConfirming(false)
+      // SENT always leaves zero (alone or cascade); non-SENT leaves zero iff alone.
+      const willLeaveZeroActive =
+        eventType === 'sent' || !hasOtherNonVoidedOutcomes
+      onRetractSuccess({
+        generatedEmailId,
+        eventType,
+        willLeaveZeroActive,
+      })
       // Full outcomes list refetch — picks up cascade-voided siblings too.
       void queryClient.invalidateQueries({ queryKey: OUTCOMES_QUERY_KEY })
     },

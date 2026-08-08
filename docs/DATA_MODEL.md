@@ -513,3 +513,7 @@ Autogenerate performs this topological sort automatically via foreign keys; it i
 ## Brand / product naming (2026-08-05)
 
 **No change needed.** The Inroad rebrand is product naming and static brand assets only — no entity, column, enum, JSONB shape, or migration changes. (The `outcomes.user_id` additive migration is a separate, later decision — see §2.8 / §3.1.)
+
+## /history toast + fade-and-remove (2026-08-08)
+
+**No change needed.** Toast confirmations and tab-specific fade-and-remove on `/history` are frontend presentation only — transient local leaving-set + CSS, plus invalidate-on-success already owned by the outcome mutations. No entity, column, enum, JSONB shape, endpoint, or migration changes.

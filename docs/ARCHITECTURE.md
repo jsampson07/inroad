@@ -393,7 +393,22 @@ class CompanySearchResponse(BaseModel):
 
 **Retract cascade confirm:** Retracting a Sent row when other non-voided outcomes exist for that email shows inline cascade copy ("Retracting 'Sent' will also retract all other logged outcomes…") before Confirm/Cancel — still the existing inline pattern, not `window.confirm()` or a modal. Plain retract confirm when Sent is alone (or when retracting a non-Sent row). Existing `OUTCOMES_QUERY_KEY` invalidation refetches the full list, so cascade-voided siblings disappear without extra client logic.
 
-**Expected filter interaction after retract:** If retracting the last non-voided outcome for an email while the filter is Logged (the default), that email disappears from the visible list on refetch. Correct behavior — not a bug; no special-casing to keep it visible. Same after a SENT cascade retract that voids every remaining outcome for that email.
+**Expected filter interaction after retract:** If retracting the last non-voided outcome for an email while the filter is Logged (the default), that email disappears from the visible list on refetch. Correct behavior — not a bug; no special-casing to keep it visible. Same after a SENT cascade retract that voids every remaining outcome for that email. **Underlying data behavior is unchanged by the visual fade below** — membership still follows non-voided outcome counts after `OUTCOMES_QUERY_KEY` invalidation; the fade is presentation only.
+
+**Toast / snackbar (log + retract confirmation):** A single page-level toast on `HistoryPage` (one visible at a time — a new success replaces whatever is showing; no queue/stack). Auto-dismisses after ~3 seconds. Fires on every successful log or retract, on every filter tab, whether or not a fade-and-remove also runs. Copy is event-type-specific: log → `"Marked as Sent"` / `"Marked as Replied"` / `"Marked as Interview"` / `"Marked as No Response"`; retract → `"Retracted: Sent"` / `"Retracted: Replied"` / etc., using the retracted row's `event_type`. Plain presentational markup + a dismiss timer — no toast library.
+
+**Fade-and-remove (tab-specific visual only):** Two trigger conditions only; every other tab/action combination updates the row's badge/timeline in place with no fade:
+
+| Active filter | Action | Fade-and-remove? |
+| --- | --- | --- |
+| Not yet logged | First non-voided outcome logged (active count was 0 immediately before) | Yes |
+| Logged | Retract that leaves zero non-voided outcomes (including SENT cascade that voids all siblings) | Yes |
+| All | Log or retract | Never |
+| Logged | Log (adds an outcome; row stays in Logged) | Never |
+| Not yet logged | Retract | N/A in practice (unlogged rows have nothing to retract) |
+| Logged | Retract that leaves ≥1 active outcome | Never |
+
+Mechanism: at mutation `onSuccess`, before `OUTCOMES_QUERY_KEY` invalidation, compute whether the action changes the row's membership in the **currently active** filter from in-memory outcome counts (same grouping map as badges/timeline). If yes, add the email id to a transient local `leaving` set and apply a CSS opacity fade-out class (same no-library, plain-CSS-transition approach as the accordion). Invalidation still runs immediately and updates underlying query data as before; the leaving set keeps the row mounted through the transition. After the fade duration (~280ms, matching the accordion timing), clear the id from the leaving set so the already-refetched filter result removes it from the DOM. If membership does not change, skip the leaving set entirely — invalidate-on-success updates badge/timeline in place.
 
 ---
 

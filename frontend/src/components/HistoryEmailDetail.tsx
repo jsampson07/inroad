@@ -78,6 +78,7 @@ export function HistoryEmailDetail({ emailId, outcomes, enabled }: Props) {
                 </span>
                 <RetractOutcomeButton
                   outcomeId={outcome.id}
+                  generatedEmailId={emailId}
                   eventType={outcome.event_type}
                   hasOtherNonVoidedOutcomes={outcomes.length > 1}
                 />

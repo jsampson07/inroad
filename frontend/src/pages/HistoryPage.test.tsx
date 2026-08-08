@@ -13,7 +13,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { AuthProvider } from '../context/AuthContext'
 import { ACCESS_TOKEN_KEY, REFRESH_TOKEN_KEY } from '../lib/apiClient'
 import type { GeneratedEmailListOut, GeneratedEmailOut } from '../lib/generatedEmailTypes'
-import type { OutcomeOut } from '../lib/outcomeTypes'
+import {
+  HISTORY_ROW_FADE_OUT_MS,
+  logSuccessToastMessage,
+  retractSuccessToastMessage,
+} from '../lib/historyFeedback'
+import type { OutcomeEventType, OutcomeOut } from '../lib/outcomeTypes'
 import { HistoryPage } from './HistoryPage'
 
 function jsonResponse(body: unknown, status = 200) {
@@ -91,6 +96,13 @@ const sentOutcome: OutcomeOut = {
   voided: false,
 }
 
+const ALL_EVENT_TYPES: OutcomeEventType[] = [
+  'sent',
+  'replied',
+  'interview',
+  'no_response',
+]
+
 function mockInitialLists(
   emails: GeneratedEmailListOut[],
   outcomes: OutcomeOut[],
@@ -125,6 +137,10 @@ function renderHistory() {
       </AuthProvider>
     </QueryClientProvider>,
   )
+}
+
+function toastEl() {
+  return document.querySelector('.history-toast')
 }
 
 describe('HistoryPage', () => {
@@ -289,6 +305,8 @@ describe('HistoryPage', () => {
       ).toBeInTheDocument()
     })
     expect(within(row as HTMLElement).getByText('Logged')).toBeInTheDocument()
+    // All tab: in-place update only — no fade/remove.
+    expect(row).not.toHaveClass('is-leaving')
 
     await user.click(screen.getByRole('radio', { name: 'Logged' }))
     await waitFor(() => {
@@ -343,11 +361,23 @@ describe('HistoryPage', () => {
     await user.click(screen.getByRole('button', { name: 'Retract' }))
     await user.click(screen.getByRole('button', { name: 'Confirm' }))
 
+    const row = screen
+      .getByText('Interest in Backend Role', {
+        selector: '.history-email-subject',
+      })
+      .closest('.history-email-row')
     await waitFor(() => {
-      expect(
-        screen.queryByText('Interest in Backend Role'),
-      ).not.toBeInTheDocument()
+      expect(row).toHaveClass('is-leaving')
     })
+
+    await waitFor(
+      () => {
+        expect(
+          screen.queryByText('Interest in Backend Role'),
+        ).not.toBeInTheDocument()
+      },
+      { timeout: HISTORY_ROW_FADE_OUT_MS + 1000 },
+    )
     expect(screen.getByRole('radio', { name: 'Logged' })).toBeChecked()
     expect(
       screen.getByText('No emails with logged outcomes yet.'),
@@ -554,11 +584,14 @@ describe('HistoryPage', () => {
 
     await user.click(screen.getByRole('button', { name: 'Confirm' }))
 
-    await waitFor(() => {
-      expect(
-        screen.getByText('No emails with logged outcomes yet.'),
-      ).toBeInTheDocument()
-    })
+    await waitFor(
+      () => {
+        expect(
+          screen.getByText('No emails with logged outcomes yet.'),
+        ).toBeInTheDocument()
+      },
+      { timeout: HISTORY_ROW_FADE_OUT_MS + 1000 },
+    )
   })
 
   it('collapses the expanded row when the filter tab changes', async () => {
@@ -613,5 +646,385 @@ describe('HistoryPage', () => {
         '.history-email-expand',
       ),
     ).not.toHaveClass('is-expanded')
+  })
+
+  it('shows event-type-specific toast text for each log and retract', async () => {
+    const user = userEvent.setup()
+    let outcomes: OutcomeOut[] = []
+    let nextId = 800
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const method = init?.method ?? 'GET'
+
+      if (url.endsWith('/generated-emails') && method === 'GET') {
+        return jsonResponse([unloggedEmail])
+      }
+      if (url.endsWith('/outcomes') && method === 'GET') {
+        return jsonResponse(outcomes)
+      }
+      if (url.endsWith('/generated-emails/202') && method === 'GET') {
+        return jsonResponse({
+          ...fullLoggedEmail,
+          id: 202,
+          subject: unloggedEmail.subject,
+          body: 'Hi Sam,\n\nQuick note.\n\nBest regards,\nJordan',
+        })
+      }
+      if (url.endsWith('/outcomes') && method === 'POST') {
+        const body = JSON.parse(String(init?.body)) as {
+          generated_email_id: number
+          event_type: OutcomeEventType
+        }
+        const created: OutcomeOut = {
+          id: nextId++,
+          generated_email_id: body.generated_email_id,
+          event_type: body.event_type,
+          occurred_at: '2026-08-08T10:00:00Z',
+          voided: false,
+        }
+        outcomes = [...outcomes, created]
+        return jsonResponse(created, 201)
+      }
+      const retractMatch = url.match(/\/outcomes\/(\d+)\/retract$/)
+      if (retractMatch && method === 'POST') {
+        const outcomeId = Number(retractMatch[1])
+        const target = outcomes.find((o) => o.id === outcomeId)
+        if (!target) {
+          return jsonResponse({ user_message: 'Missing', error_code: 'Test' }, 404)
+        }
+        if (target.event_type === 'sent') {
+          outcomes = []
+        } else {
+          outcomes = outcomes.filter((o) => o.id !== outcomeId)
+        }
+        return jsonResponse({ ...target, voided: true })
+      }
+      return jsonResponse({ user_message: 'Unexpected', error_code: 'Test' }, 500)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    renderHistory()
+
+    await user.click(await screen.findByRole('radio', { name: 'All' }))
+    await user.click(
+      await screen.findByText('Quick note about the TA role'),
+    )
+    await screen.findByText(/Quick note\./)
+
+    const form = screen.getByRole('form', { name: 'Log an outcome' })
+    const select = within(form).getByLabelText('Event type')
+
+    for (const eventType of ALL_EVENT_TYPES) {
+      await user.selectOptions(select, eventType)
+      await user.click(within(form).getByRole('button', { name: 'Log outcome' }))
+      await waitFor(() => {
+        expect(toastEl()?.textContent).toBe(logSuccessToastMessage(eventType))
+      })
+      expect(document.querySelectorAll('.history-toast')).toHaveLength(1)
+    }
+
+    // Retract non-Sent types first (leaves Sent), then Sent last.
+    const retractOrder: OutcomeEventType[] = [
+      'replied',
+      'interview',
+      'no_response',
+      'sent',
+    ]
+    for (const eventType of retractOrder) {
+      const timeline = screen.getByText('Outcome timeline').closest('div')
+      expect(timeline).not.toBeNull()
+      const label =
+        eventType === 'no_response'
+          ? 'No response'
+          : eventType === 'sent'
+            ? 'Sent'
+            : eventType === 'replied'
+              ? 'Replied'
+              : 'Interview'
+      const item = within(timeline as HTMLElement).getByText(label).closest('li')
+      expect(item).not.toBeNull()
+      await user.click(
+        within(item as HTMLElement).getByRole('button', { name: 'Retract' }),
+      )
+      await user.click(screen.getByRole('button', { name: 'Confirm' }))
+      await waitFor(() => {
+        expect(toastEl()?.textContent).toBe(
+          retractSuccessToastMessage(eventType),
+        )
+      })
+      expect(document.querySelectorAll('.history-toast')).toHaveLength(1)
+    }
+  })
+
+  it('replaces an in-flight toast instead of stacking', async () => {
+    const user = userEvent.setup()
+    let outcomes: OutcomeOut[] = [sentOutcome]
+    let nextId = 900
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const method = init?.method ?? 'GET'
+
+      if (url.endsWith('/generated-emails') && method === 'GET') {
+        return jsonResponse([loggedEmail])
+      }
+      if (url.endsWith('/outcomes') && method === 'GET') {
+        return jsonResponse(outcomes)
+      }
+      if (url.endsWith('/generated-emails/101') && method === 'GET') {
+        return jsonResponse(fullLoggedEmail)
+      }
+      if (url.endsWith('/outcomes') && method === 'POST') {
+        const body = JSON.parse(String(init?.body)) as {
+          generated_email_id: number
+          event_type: OutcomeEventType
+        }
+        const created: OutcomeOut = {
+          id: nextId++,
+          generated_email_id: body.generated_email_id,
+          event_type: body.event_type,
+          occurred_at: '2026-08-08T12:00:00Z',
+          voided: false,
+        }
+        outcomes = [...outcomes, created]
+        return jsonResponse(created, 201)
+      }
+      return jsonResponse({ user_message: 'Unexpected', error_code: 'Test' }, 500)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    renderHistory()
+
+    await user.click(await screen.findByText('Interest in Backend Role'))
+    await screen.findByText(/I am interested in the backend role/)
+
+    const form = screen.getByRole('form', { name: 'Log an outcome' })
+    const select = within(form).getByLabelText('Event type')
+    await user.selectOptions(select, 'replied')
+    await user.click(within(form).getByRole('button', { name: 'Log outcome' }))
+    await waitFor(() => {
+      expect(toastEl()?.textContent).toBe('Marked as Replied')
+    })
+
+    await user.selectOptions(select, 'interview')
+    await user.click(within(form).getByRole('button', { name: 'Log outcome' }))
+    await waitFor(() => {
+      expect(toastEl()?.textContent).toBe('Marked as Interview')
+    })
+    expect(document.querySelectorAll('.history-toast')).toHaveLength(1)
+  })
+
+  it('fades and removes a row from Not yet logged on its first log', async () => {
+    const user = userEvent.setup()
+    let outcomes: OutcomeOut[] = []
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const method = init?.method ?? 'GET'
+
+      if (url.endsWith('/generated-emails') && method === 'GET') {
+        return jsonResponse([unloggedEmail])
+      }
+      if (url.endsWith('/outcomes') && method === 'GET') {
+        return jsonResponse(outcomes)
+      }
+      if (url.endsWith('/generated-emails/202') && method === 'GET') {
+        return jsonResponse({
+          ...fullLoggedEmail,
+          id: 202,
+          subject: unloggedEmail.subject,
+          body: 'Hi Sam,\n\nQuick note.\n\nBest regards,\nJordan',
+        })
+      }
+      if (url.endsWith('/outcomes') && method === 'POST') {
+        const body = JSON.parse(String(init?.body)) as {
+          generated_email_id: number
+          event_type: OutcomeEventType
+        }
+        const created: OutcomeOut = {
+          id: 901,
+          generated_email_id: body.generated_email_id,
+          event_type: body.event_type,
+          occurred_at: '2026-08-08T13:00:00Z',
+          voided: false,
+        }
+        outcomes = [created]
+        return jsonResponse(created, 201)
+      }
+      return jsonResponse({ user_message: 'Unexpected', error_code: 'Test' }, 500)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    renderHistory()
+
+    await user.click(await screen.findByRole('radio', { name: 'Not yet logged' }))
+    await user.click(
+      await screen.findByText('Quick note about the TA role'),
+    )
+    await screen.findByText(/Quick note\./)
+
+    const row = screen
+      .getByText('Quick note about the TA role', {
+        selector: '.history-email-subject',
+      })
+      .closest('.history-email-row')
+    expect(row).not.toBeNull()
+
+    const form = screen.getByRole('form', { name: 'Log an outcome' })
+    await user.click(within(form).getByRole('button', { name: 'Log outcome' }))
+
+    await waitFor(() => {
+      expect(toastEl()?.textContent).toBe('Marked as Sent')
+      expect(row).toHaveClass('is-leaving')
+    })
+
+    await waitFor(
+      () => {
+        expect(
+          screen.queryByText('Quick note about the TA role'),
+        ).not.toBeInTheDocument()
+      },
+      { timeout: HISTORY_ROW_FADE_OUT_MS + 1000 },
+    )
+    expect(
+      screen.getByText('Every email already has at least one outcome.'),
+    ).toBeInTheDocument()
+  })
+
+  it('fades and removes a row from Logged when its last outcome is retracted', async () => {
+    const user = userEvent.setup()
+    let outcomes: OutcomeOut[] = [sentOutcome]
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const method = init?.method ?? 'GET'
+
+      if (url.endsWith('/generated-emails') && method === 'GET') {
+        return jsonResponse([loggedEmail])
+      }
+      if (url.endsWith('/outcomes') && method === 'GET') {
+        return jsonResponse(outcomes)
+      }
+      if (url.endsWith('/generated-emails/101') && method === 'GET') {
+        return jsonResponse(fullLoggedEmail)
+      }
+      if (url.endsWith('/outcomes/501/retract') && method === 'POST') {
+        outcomes = []
+        return jsonResponse({ ...sentOutcome, voided: true })
+      }
+      return jsonResponse({ user_message: 'Unexpected', error_code: 'Test' }, 500)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    renderHistory()
+
+    await user.click(await screen.findByText('Interest in Backend Role'))
+    await screen.findByText(/I am interested in the backend role/)
+
+    const row = screen
+      .getByText('Interest in Backend Role', {
+        selector: '.history-email-subject',
+      })
+      .closest('.history-email-row')
+
+    await user.click(screen.getByRole('button', { name: 'Retract' }))
+    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+
+    await waitFor(() => {
+      expect(toastEl()?.textContent).toBe('Retracted: Sent')
+      expect(row).toHaveClass('is-leaving')
+    })
+
+    await waitFor(
+      () => {
+        expect(
+          screen.queryByText('Interest in Backend Role'),
+        ).not.toBeInTheDocument()
+      },
+      { timeout: HISTORY_ROW_FADE_OUT_MS + 1000 },
+    )
+  })
+
+  it('does not fade or remove on All for log or retract — updates in place', async () => {
+    const user = userEvent.setup()
+    let outcomes: OutcomeOut[] = []
+    let createdId = 0
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      const method = init?.method ?? 'GET'
+
+      if (url.endsWith('/generated-emails') && method === 'GET') {
+        return jsonResponse([unloggedEmail])
+      }
+      if (url.endsWith('/outcomes') && method === 'GET') {
+        return jsonResponse(outcomes)
+      }
+      if (url.endsWith('/generated-emails/202') && method === 'GET') {
+        return jsonResponse({
+          ...fullLoggedEmail,
+          id: 202,
+          subject: unloggedEmail.subject,
+          body: 'Hi Sam,\n\nQuick note.\n\nBest regards,\nJordan',
+        })
+      }
+      if (url.endsWith('/outcomes') && method === 'POST') {
+        const body = JSON.parse(String(init?.body)) as {
+          generated_email_id: number
+          event_type: OutcomeEventType
+        }
+        const created: OutcomeOut = {
+          id: 950,
+          generated_email_id: body.generated_email_id,
+          event_type: body.event_type,
+          occurred_at: '2026-08-08T14:00:00Z',
+          voided: false,
+        }
+        createdId = created.id
+        outcomes = [created]
+        return jsonResponse(created, 201)
+      }
+      if (url.endsWith(`/outcomes/${createdId}/retract`) && method === 'POST') {
+        const voided = { ...outcomes[0], voided: true }
+        outcomes = []
+        return jsonResponse(voided)
+      }
+      return jsonResponse({ user_message: 'Unexpected', error_code: 'Test' }, 500)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    renderHistory()
+
+    await user.click(await screen.findByRole('radio', { name: 'All' }))
+    await user.click(
+      await screen.findByText('Quick note about the TA role'),
+    )
+    await screen.findByText(/Quick note\./)
+
+    const row = () =>
+      screen
+        .getByText('Quick note about the TA role', {
+          selector: '.history-email-subject',
+        })
+        .closest('.history-email-row') as HTMLElement
+
+    const form = screen.getByRole('form', { name: 'Log an outcome' })
+    await user.click(within(form).getByRole('button', { name: 'Log outcome' }))
+
+    await waitFor(() => {
+      expect(toastEl()?.textContent).toBe('Marked as Sent')
+      expect(within(row()).getByText('Logged')).toBeInTheDocument()
+    })
+    expect(row()).not.toHaveClass('is-leaving')
+    expect(
+      screen.getByText('Quick note about the TA role', {
+        selector: '.history-email-subject',
+      }),
+    ).toBeInTheDocument()
+
+    await user.click(within(row()).getByRole('button', { name: 'Retract' }))
+    await user.click(screen.getByRole('button', { name: 'Confirm' }))
+
+    await waitFor(() => {
+      expect(toastEl()?.textContent).toBe('Retracted: Sent')
+      expect(within(row()).getByText('Not logged')).toBeInTheDocument()
+    })
+    expect(row()).not.toHaveClass('is-leaving')
+    expect(
+      screen.getByText('Quick note about the TA role', {
+        selector: '.history-email-subject',
+      }),
+    ).toBeInTheDocument()
   })
 })
