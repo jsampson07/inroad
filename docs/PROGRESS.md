@@ -2,7 +2,7 @@
 
 > For external readers: this is a living, session-overwritten implementation snapshot from active development — verified against the codebase each session, not a polished changelog or finished status report.
 
-*Overwritten each session, not appended to. Reflects verified state as of the session ending 2026-08-08 — FRAME 1 manual-entry escape hatch on non-empty company-search results.*
+*Overwritten each session, not appended to. Reflects verified state as of the session ending 2026-08-09 — Hunter free-plan `DOMAIN_SEARCH_LIMIT` fix (100 → 10).*
 
 ---
 
@@ -10,31 +10,24 @@
 
 ### Verified working (functionally exercised, not just present)
 
-- **FRAME 1 manual-entry escape hatch (this session, frontend-only):**
-  - When Clearbit returns ≥1 candidate, a "Can't find what you're looking for?" underlined text link (`.text-link`) renders beneath the candidate list in `HomePage.tsx`.
-  - Clicking it calls `openManualFallback()` — same destination as the existing auto-routes: clears candidates, sets `showManualFallback`, prefills `manualName` from the search query. Reuses the existing `.manual-fallback` form + `handleManualConfirm` entirely (no duplicate manual-entry UI).
-  - Zero-candidates and Clearbit-failure auto-routing unchanged.
-  - Closes out the last item from the original five-branch `/history` + company-search UX roadmap.
-- **Frontend tests run this session:**
-  ```
-  npm run test:run
-  → Test Files  11 passed (11)
-  → Tests  77 passed (77)
-  ```
-  New coverage: escape link present when candidates.length ≥ 1 (and manual frame not auto-shown); click transitions to manual frame and lock-in via "Use this company" works from this path. Existing zero-candidates / Clearbit-failure / manual-confirm tests left unmodified.
-  `npx tsc -b` clean.
-- **Prior slices unchanged:** /history stage badge + timeline, toast + fade-and-remove, SENT gate + retract cascade, `/analytics`, FRAME 6 Mark as Sent. No backend/schema/API changes this session.
+- **Hunter free-plan Domain Search limit fix (this session):**
+  - `DOMAIN_SEARCH_LIMIT` hardcoded to `10` (free-plan hard cap). Prior value `100` caused HTTP 400 `pagination_error` on every live search. Comment corrected — no settings/env field (same "no configurability ahead of need" pattern as Redis §5.1).
+  - Regression test `test_pagination_error_400_returns_error`: mocks the real `pagination_error` body, asserts `ProviderStatus.ERROR` / empty candidates / populated `error_message`, and asserts outbound `limit == 10` so an accidental bump fails in CI before a live-key check.
+  - **Live re-probe (`google.com`, `CONTACT_PROVIDER=hunter`, same discover service path):** request `limit=10` → **HTTP 200**, `raw_candidate_count=10`. Title filter: recruiter / talent_acquisition / hiring_manager → **0 matches**; founder tier → **2 matches** (`Director of Business Development`, `Key Account Director` — substring hit on `cto` inside `Director`, not a true CTO title; `Chief Technology Officer` did **not** match `cto`). Discovery returned a contact with `tier_used=founder` and the exhausted-earlier-tiers fallback copy. **Live-key validation for the limit bug: passes** (no longer 400). Google still may not surface genuine recruiter/HR titles in the first free-plan page — empty tiers 1–3 are expected data, not a regression of this fix. The founder false-positive via `cto`⊆`Director` is a pre-existing substring-heuristic quirk, not introduced here and not changed this session.
+  - Hunter unit tests: 13 passed (was 12).
+- **Hunter structured logging (earlier on this branch):** request/response/title-match INFO logs + `app` logger wiring in `main.py` — still in place; that observability is what found the limit bug.
+- **Prior product slices (carried forward — developer-dogfooded earlier; not re-verified this session):** FRAME 1 escape hatch, `/history` stage badge + chronological timeline, toast + fade-and-remove, SENT gate + retract cascade, `/analytics`, FRAME 6 Mark as Sent.
 
 ### Present, but not yet exercised by anything
 
-- **Manual browser dogfood** of the candidate-list escape link → manual domain confirm path (Vitest covers transition + lock-in).
-- **Manual browser dogfood** of `/history` stage badge + timeline, toast/fade, SENT gate / cascade, `/analytics` — still pending from prior sessions.
-- **Router-level HTTP TestClient suites** for analytics / Slice 2a list/retract — still service-level / pure-function only.
+- **Router-level HTTP TestClient suites** for analytics / Slice 2a — still service-level / pure-function only.
+- **Widening `RAW_PROVIDER_RESULTS` writes** to all raw Hunter emails / failed searches — gap documented earlier on this branch; explicitly deferred, not part of this fix.
 
 ### Not started
 
 - **Automatic No-Response supersession** on later Reply/Interview (deferred — `OPEN_QUESTIONS.md`).
 - **Apollo/Anymail providers**, **refresh-token rotation / cookie transport / rate-limiting**, **public/live deployment**, **`GENERATED_EMAILS.user_id` denormalization**, **resume picker reuse**, **regenerate-email control**, analytics cross-tab / date-range (deferred — see `OPEN_QUESTIONS.md`).
+- **Title-match heuristic hardening** (e.g. `cto` matching inside `Director`) — observed on live Google founder tier; not in scope for this limit-only fix.
 
 ---
 
@@ -53,38 +46,38 @@
 9. **sessionStorage key `discoveryFlow`:** home flow only; `/history` and `/analytics` deliberately have none.
 10. **`ResumeExtraction` revision:** `candidate_name` + `projects`/`ProjectEntry`. Deterministic post-eval signature append + `_strip_trailing_closing`.
 11. **`OUTCOMES.user_id` denormalized** (migration `75ea1b948b2a`); **`voided`** added (migration `c4f8e2a91b07`); **one non-voided SENT** partial unique index (migration `e8a3c71f2049`) + create-time gate + SENT retract cascade — see `DATA_MODEL.md` §2.8 / `OPEN_QUESTIONS.md`.
+12. **Hunter `DOMAIN_SEARCH_LIMIT=10`** (free-plan hard cap). Was 100 → free-plan 400; fixed this session.
 
-**Doc/code check this session:** `ARCHITECTURE.md` §7 UX contract updated — three paths to the same manual-entry frame (two automatic, one user-triggered). `DATA_MODEL.md` / `product_discovery_summary.md` / `OPEN_QUESTIONS.md` explicitly marked no-change.
+**Doc/code check this session:** `OPEN_QUESTIONS.md` pagination + observability entries updated (limit fixed); `ARCHITECTURE.md` §4.6 notes the bug logging surfaced is now fixed; `DATA_MODEL.md` / `product_discovery_summary.md` prior gap notes left as-is + no-change for this limit fix.
 
 ---
 
 ## What's next
 
-1. **Manual browser dogfood** of FRAME 1 escape hatch, `/history` stage badge + timeline, toast/fade, SENT gate / cascade, `/analytics`.
-2. **Deferred follow-up:** automatic No-Response supersession (backend void + frontend-visible effect) when trigger conditions in `OPEN_QUESTIONS.md` are met.
-3. **Stretch — rate-limiting** before any public deploy.
+1. **Optional follow-up:** title-match heuristic (`cto` ⊆ `Director` false positive) if dogfooding shows bad founder-tier picks; not blocking live-key use for smaller companies with real recruiter titles in the first page.
+2. **Deferred:** `RAW_PROVIDER_RESULTS` completeness, automatic No-Response supersession, rate-limiting before public deploy.
 
 ---
 
 ## Test results (this session — actual suite output)
 
 ```
-frontend: npm run test:run
-→ Test Files  11 passed (11)
-→ Tests  77 passed (77)
+backend: pytest tests/providers/test_hunter_provider.py
+→ 13 passed
 
-frontend: npx tsc -b
-→ exit 0 (clean)
+Live in-process discover (google.com, CONTACT_PROVIDER=hunter, DOMAIN_SEARCH_LIMIT=10):
+→ HTTP 200, raw_candidate_count=10
+→ tiers 1–3: 0 title matches; founder: 2 matches (cto⊆Director substring)
+→ contact present, tier_used=founder
 ```
 
-**Not run this session:** backend pytest, live LLM/provider calls, manual browser walkthrough.
+**Not run this session:** full backend pytest suite, frontend tests, live LLM calls. Prior UI dogfood (FRAME 1 / `/history` / `/analytics`) preserved as developer-confirmed from earlier work, not re-run here.
 
 ---
 
 ## Doc notes from this session
 
-- **`PROGRESS.md`:** overwritten for FRAME 1 candidate-list → manual-entry escape hatch; notes this closes the last item from the original five-branch `/history` + company-search UX roadmap.
-- **`ARCHITECTURE.md`:** §7 UX contract — three entry paths to the same manual-entry frame (zero candidates, Clearbit failure, user-triggered link).
-- **`OPEN_QUESTIONS.md`:** explicit no-change note (no new open/deferred question).
-- **`DATA_MODEL.md`:** explicit no-change note (frontend presentation only).
-- **`product_discovery_summary.md`:** explicit no-change note (no MVP scope change).
+- **`PROGRESS.md`:** overwritten for free-plan limit fix; live-key limit validation passes; Google founder false-positive noted, not fixed.
+- **`ARCHITECTURE.md`:** §4.6 — logging outcome: limit bug found and fixed (`DOMAIN_SEARCH_LIMIT=10`).
+- **`OPEN_QUESTIONS.md`:** pagination entry records fix (400 → real 200); observability entry notes bug closed; `RAW_PROVIDER_RESULTS` gap still deferred.
+- **`DATA_MODEL.md` / `product_discovery_summary.md`:** prior diagnostics notes unchanged; no-change notes for this limit-only fix.

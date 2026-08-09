@@ -7,6 +7,7 @@ emails. Instance-local only — not the DB-backed cache from §4.3.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import httpx
@@ -19,10 +20,13 @@ from app.providers.base import (
     ProviderStatus,
 )
 
+logger = logging.getLogger("app.providers.hunter")
+
 HUNTER_DOMAIN_SEARCH_URL = "https://api.hunter.io/v2/domain-search"
 REQUEST_TIMEOUT_SECONDS = 10.0
-# Hunter caps Domain Search at 100 emails per response (default 10).
-DOMAIN_SEARCH_LIMIT = 100
+# Free-plan hard cap: Hunter rejects limit > 10 with HTTP 400 pagination_error.
+# Paid plans allow up to 100; bump this one line if/when the account upgrades.
+DOMAIN_SEARCH_LIMIT = 10
 
 # Unvalidated v1 VerificationTier mapping — see PROGRESS.md Deviations.
 # Hunter Domain Search verification.status values: valid | accept_all | unknown
@@ -32,6 +36,26 @@ _CONFIDENCE_PATTERN_GUESSED_MIN = 80
 
 class UnexpectedHunterResponseError(Exception):
     """Hunter returned HTTP 200 with a shape we cannot normalize (§4.1 carve-out)."""
+
+
+def _redact_email(email: Any) -> str:
+    """Local-part truncated for INFO logs — full addresses are PII."""
+    if not isinstance(email, str) or "@" not in email:
+        return "(none)"
+    local, _, domain = email.partition("@")
+    if not local:
+        return f"***@{domain}"
+    return f"{local[0]}***@{domain}"
+
+
+def _candidate_log_fields(email_obj: dict[str, Any]) -> dict[str, Any]:
+    email_type = email_obj.get("type")
+    position = email_obj.get("position")
+    return {
+        "type": email_type if isinstance(email_type, str) else None,
+        "position": position if isinstance(position, str) else None,
+        "email": _redact_email(email_obj.get("value")),
+    }
 
 
 class HunterProvider(ContactProvider):
@@ -52,7 +76,36 @@ class HunterProvider(ContactProvider):
             cached = await self._fetch_and_cache(company_domain)
 
         if isinstance(cached, ProviderSearchResult):
+            logger.info(
+                "replaying cached non-SUCCESS result domain=%s status=%s "
+                "error_message=%s (no title filter this tier)",
+                company_domain,
+                cached.status.value,
+                cached.error_message,
+            )
             return cached
+
+        # Title filtering is owned here (per-provider position match against the
+        # orchestrator's tier title list) — not in contact_discovery.py.
+        matched: list[dict[str, Any]] = []
+        unmatched: list[dict[str, Any]] = []
+        for email_obj in cached:
+            fields = _candidate_log_fields(email_obj)
+            if self._matches_titles(email_obj.get("position"), role_titles):
+                matched.append(fields)
+            else:
+                unmatched.append(fields)
+
+        logger.info(
+            "title filter domain=%s acceptable_titles=%s "
+            "matched_count=%d unmatched_count=%d matched=%s unmatched=%s",
+            company_domain,
+            role_titles,
+            len(matched),
+            len(unmatched),
+            matched,
+            unmatched,
+        )
 
         candidates = [
             self._to_candidate(email_obj)
@@ -77,6 +130,17 @@ class HunterProvider(ContactProvider):
             self._domain_cache[company_domain] = result
             return result
 
+        # Never log api_key — only the params that identify the query shape.
+        request_params = {
+            "domain": company_domain,
+            "limit": DOMAIN_SEARCH_LIMIT,
+        }
+        logger.info(
+            "Hunter Domain Search request company_domain=%s params=%s",
+            company_domain,
+            request_params,
+        )
+
         try:
             async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT_SECONDS) as client:
                 response = await client.get(
@@ -88,6 +152,11 @@ class HunterProvider(ContactProvider):
                     },
                 )
         except httpx.TimeoutException:
+            logger.info(
+                "Hunter Domain Search timed out company_domain=%s after %ss",
+                company_domain,
+                REQUEST_TIMEOUT_SECONDS,
+            )
             result = ProviderSearchResult(
                 provider_name=self.name,
                 status=ProviderStatus.ERROR,
@@ -96,6 +165,11 @@ class HunterProvider(ContactProvider):
             self._domain_cache[company_domain] = result
             return result
         except httpx.HTTPError as exc:
+            logger.info(
+                "Hunter Domain Search network error company_domain=%s error=%s",
+                company_domain,
+                exc,
+            )
             result = ProviderSearchResult(
                 provider_name=self.name,
                 status=ProviderStatus.ERROR,
@@ -105,6 +179,13 @@ class HunterProvider(ContactProvider):
             return result
 
         if response.status_code in (403, 429):
+            logger.info(
+                "Hunter Domain Search response company_domain=%s http_status=%d "
+                "raw_candidate_count=0 body_prefix=%r",
+                company_domain,
+                response.status_code,
+                response.text[:200],
+            )
             result = ProviderSearchResult(
                 provider_name=self.name,
                 status=ProviderStatus.RATE_LIMITED,
@@ -117,6 +198,13 @@ class HunterProvider(ContactProvider):
             return result
 
         if response.status_code != 200:
+            logger.info(
+                "Hunter Domain Search response company_domain=%s http_status=%d "
+                "raw_candidate_count=0 body_prefix=%r",
+                company_domain,
+                response.status_code,
+                response.text[:200],
+            )
             result = ProviderSearchResult(
                 provider_name=self.name,
                 status=ProviderStatus.ERROR,
@@ -136,6 +224,15 @@ class HunterProvider(ContactProvider):
             ) from exc
 
         emails = self._extract_emails(payload)
+        candidate_summaries = [_candidate_log_fields(e) for e in emails]
+        logger.info(
+            "Hunter Domain Search response company_domain=%s http_status=%d "
+            "raw_candidate_count=%d candidates=%s",
+            company_domain,
+            response.status_code,
+            len(emails),
+            candidate_summaries,
+        )
         self._domain_cache[company_domain] = emails
         return emails
 

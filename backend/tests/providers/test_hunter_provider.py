@@ -166,6 +166,37 @@ def test_error_cached_no_retry():
     assert client.get.await_count == 1
 
 
+def test_pagination_error_400_returns_error():
+    """Free-plan rejection of limit>10 — must be ERROR, not a crash or empty SUCCESS.
+
+    Also asserts the outbound request still uses DOMAIN_SEARCH_LIMIT == 10 so an
+    accidental bump back to 100 fails this unit test before a live-key check.
+    """
+    from app.providers.hunter import DOMAIN_SEARCH_LIMIT
+
+    body = (
+        '{\n  "errors": [\n    {\n      "id": "pagination_error",\n'
+        '      "code": 400,\n'
+        '      "details": "The search results are limited to 10 email '
+        'addresses on your current plan."\n    }\n  ]\n}'
+    )
+    client = _mock_client(
+        get_result=_response(status_code=400, text=body)
+    )
+    provider = HunterProvider(api_key="test-key")
+
+    with patch("app.providers.hunter.httpx.AsyncClient", return_value=client):
+        result = asyncio.run(provider.search("google.com", ["recruiter"]))
+
+    assert DOMAIN_SEARCH_LIMIT == 10
+    assert client.get.await_args.kwargs["params"]["limit"] == 10
+    assert result.status == ProviderStatus.ERROR
+    assert result.candidates == []
+    assert result.error_message is not None
+    assert "400" in result.error_message
+    assert "pagination_error" in result.error_message
+
+
 def test_network_error_returns_error_not_raised():
     client = _mock_client(
         get_side_effect=httpx.ConnectError("connection refused")

@@ -161,3 +161,11 @@ Apollo and Anymail Finder integrations (see Deferred Features table), then revis
 ## Manual company-domain escape hatch on candidate list (2026-08-08)
 
 **No change needed.** A user-triggered link from non-empty company-search results into the existing manual name+domain fallback is frontend UX on an already-scoped company-lock-in path (Clearbit suggest + manual domain). No change to product scope, value proposition, eval rubric, or tech-stack choices.
+
+## Hunter discovery diagnostics logging (2026-08-08)
+
+**No MVP-scope change.** Observability-only: structured provider logging. **Doc/code fidelity note:** the locked data-model bullet above ("one row per person-candidate returned…") describes intended audit granularity; the live write path currently persists only title-filtered candidates on a successful tier hit (see `DATA_MODEL.md` session note). That gap is recorded for a later design pass — not fixed here, and not a product-scope change.
+
+## Hunter free-plan Domain Search limit fix (2026-08-09)
+
+**No change needed.** Aligning Domain Search `limit` with Hunter's free-plan cap of 10 is an implementation correction inside the existing provider contract — no change to product scope, value proposition, eval rubric, or tech-stack choices.
