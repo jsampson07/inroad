@@ -521,3 +521,16 @@ Autogenerate performs this topological sort automatically via foreign keys; it i
 ## Manual company-domain escape hatch on candidate list (2026-08-08)
 
 **No change needed.** Adding a user-triggered text link beneath non-empty Clearbit candidate results that opens the existing FRAME 1 manual name+domain fallback is frontend presentation only — same destination frame already reached by zero-candidates and Clearbit-failure auto-routes. No entity, column, enum, JSONB shape, endpoint, or migration changes.
+
+## Hunter discovery diagnostics logging (2026-08-08)
+
+**Gap vs. product/doc intent — documented, not fixed this session.** `product_discovery_summary.md` describes `RAW_PROVIDER_RESULTS` as one row per person-candidate **returned** by a provider for a company query. In the current pipeline that is not what gets written:
+
+- `HunterProvider.search()` only promotes emails whose `position` passes the tier's title substring filter into `ProviderCandidate`s.
+- `contact_discovery._persist_raw_results` runs only when a tier has a non-empty successful hit — exhausted / all-empty / provider-ERROR searches write **no** `RAW_PROVIDER_RESULTS` rows.
+
+So Postgres cannot answer "what did Hunter return before title filtering?" (or "did Hunter error?") for past failed searches. Structured logging in `HunterProvider` (ARCHITECTURE.md §4.6) is the interim observability path; widening persistence to all raw emails remains an open design choice, not done here. No schema/migration change this session.
+
+## Hunter free-plan Domain Search limit fix (2026-08-09)
+
+**No change needed.** Hardcoding `DOMAIN_SEARCH_LIMIT = 10` (and the regression test for `pagination_error` ERROR handling) is provider-request behavior only — no entity, column, enum, JSONB shape, endpoint, or migration changes. The `RAW_PROVIDER_RESULTS` completeness gap note above is intentionally untouched / still deferred.

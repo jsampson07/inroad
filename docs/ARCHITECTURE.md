@@ -168,6 +168,16 @@ class ProviderSearchResult(BaseModel):
 
 Any other domain still gets the bare default (successful empty candidates) unless added to `DEV_SCRIPTED_RESULTS`. After a successful find, Postgres cache (§5) may short-circuit a re-search for that domain until the contact row is cleared.
 
+### 4.6 Provider / title-match diagnostics logging
+
+**Decision:** `HunterProvider` emits structured INFO logs via the standard library (`logging.getLogger("app.providers.hunter")`), not ad-hoc `print`s. Coverage: Domain Search request params (`domain`, `limit` — never `api_key`), HTTP status and raw candidate count on the response (including non-200 bodies), and — because title matching runs **inside** the provider against each email's `position` (the orchestrator only chooses which `role_titles` list to pass per tier, §4.2) — per-tier acceptable-title lists with matched vs. unmatched candidate summaries.
+
+**PII:** full email addresses are not logged at INFO; local-parts are truncated (e.g. `j***@domain.com`).
+
+**Visibility:** uvicorn's default `LOGGING_CONFIG` only attaches handlers to `uvicorn.*` loggers, so `app.*` INFO would otherwise be silent. `app/main.py` configures the `app` logger (INFO + StreamHandler, `propagate=False`) so provider and other `app.*` diagnostics reach the console alongside access logs.
+
+**Outcome of this observability:** the logs surfaced a free-plan `DOMAIN_SEARCH_LIMIT=100` → HTTP 400 `pagination_error` on every live Domain Search. That limit is now hardcoded to `10` (free-plan hard cap; paid bump is a one-line constant change, not a settings field — same "no configurability ahead of need" reasoning as §5.1 Redis). Logging stays in place for future live-provider debugging.
+
 ---
 
 ## 5. Caching Strategy
